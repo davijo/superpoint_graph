@@ -2,7 +2,7 @@
 # author: Loic Landrieu
 # date: 2017
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.5)
 
 PROJECT(LIBGEOF)
 
@@ -40,5 +40,4 @@ add_library(ply_c SHARED ply_c.cpp)
 target_link_libraries(ply_c
     ${Boost_LIBRARIES}
     ${PYTHON_LIBRARIES}
-    boost_python
     )

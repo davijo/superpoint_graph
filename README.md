@@ -28,11 +28,19 @@ cd partition/ply_c
 cmake . -DPYTHON_LIBRARY=$CONDAENV/lib/libpython3.6m.so -DPYTHON_INCLUDE_DIR=$CONDAENV/include/python3.6m -DBOOST_INCLUDEDIR=$CONDAENV/include -DEIGEN3_INCLUDE_DIR=$CONDAENV/include/eigen3
 make
 cd ..
-cd cut-pursuit
+cd cut-pursuit/src
 cmake . -DPYTHON_LIBRARY=$CONDAENV/lib/libpython3.6m.so -DPYTHON_INCLUDE_DIR=$CONDAENV/include/python3.6m -DBOOST_INCLUDEDIR=$CONDAENV/include -DEIGEN3_INCLUDE_DIR=$CONDAENV/include/eigen3
 make
 ```
 where `$CONDAENV` is the path to your conda environment. The code was tested on Ubuntu 14.04 with Python 3.6 and PyTorch 0.2.
+
+### Troubleshooting
+
+Common sources of error and how to fix them:
+- $CONDA_ENV is not defined : define it or replace $CONDA_ENV by the absolute path of your environment (find it with ```locate anaconda```)
+- anaconda uses a different version of python than 3.6m : adapt it in the command. Find which version of python conda is using with ```locate anaconda3/lib/libpython```
+- you are using boost 1.62 or older: update it
+- cut pursuit did not download: manually clone it in the ```partition``` folder.
 
 ## S3DIS
 
@@ -42,9 +50,7 @@ Download [S3DIS Dataset](http://buildingparser.stanford.edu/dataset.html) and ex
 
 To compute the partition run
 
-```python partition/partition_S3DIS.py --S3DIS_PATH $S3DIR_DIR```
-
-This step can take a long time and take up a lot of RAM. Prune with ```--voxel_width``` between 0.02 and 0.05 to decrease the computational load (disclaimer: the ```--reg_strength``` will have to be decreased, the accuracy might decrease, and the trained model won't work).
+```python partition/partition.py --dataset s3dis --ROOT_PATH $S3DIR_DIR --voxel_width 0.03 --reg_strength 0.03```
 
 ### Training
 
@@ -56,7 +62,7 @@ To train on the all 6 folds, run
 ```
 for FOLD in 1 2 3 4 5 6; do \
 CUDA_VISIBLE_DEVICES=0 python learning/main.py --dataset s3dis --S3DIS_PATH $S3DIR_DIR --cvfold $FOLD --epochs 350 --lr_steps '[275,320]' \
---test_nth_epoch 50 --model_config 'gru_10,f_13' --ptn_nfeat_stn 14 --nworkers 2 --odir "results/s3dis/best/cv${FOLD}"; \
+--test_nth_epoch 50 --model_config 'gru_10_0,f_13' --ptn_nfeat_stn 14 --nworkers 2 --odir "results/s3dis/best/cv${FOLD}"; \
 done
 ```
 The trained networks can be downloaded [here](http://imagine.enpc.fr/~simonovm/largescale/models_s3dis.zip), unzipped and loaded with `--resume` argument.
@@ -65,13 +71,28 @@ To test this network on the full test set, run
 ```
 for FOLD in 1 2 3 4 5 6; do \
 CUDA_VISIBLE_DEVICES=0 python learning/main.py --dataset s3dis --S3DIS_PATH $S3DIR_DIR --cvfold $FOLD --epochs -1 --lr_steps '[275,320]' \
---test_nth_epoch 50 --model_config 'gru_10,f_13' --ptn_nfeat_stn 14 --nworkers 2 --odir "results/s3dis/best/cv${FOLD}" --resume RESUME; \
+--test_nth_epoch 50 --model_config 'gru_10_0,f_13' --ptn_nfeat_stn 14 --nworkers 2 --odir "results/s3dis/best/cv${FOLD}" --resume RESUME; \
 done
 ```
-To visualize the results and intermediary steps, use the visualize function in partition. For example:
+
+To evaluate quantitavily on the full set on a trained model type: 
+```python learning/evaluate_s3dis.py --odir results/s3dis/best --cvfold 123456``` 
+
+To visualize the results and all intermediary steps, use the visualize function in partition. For example:
 ```
-python ./partition/visualize.py --dataset s3dis --ROOT_PATH $S3DIR_DIR --res_file 'models/cv1/predictions_val' --file_path 'Area_1/conferenceRoom_1' --output_type igfpr
+python partition/visualize.py --dataset s3dis --ROOT_PATH $S3DIR_DIR --res_file 'models/cv1/predictions_val' --file_path 'Area_1/conferenceRoom_1' --output_type igfpres
 ```
+
+```output_type``` defined as such:
+- ```'i'``` = input rgb point cloud
+- ```'g'``` = ground truth (if available), with the predefined class to color mapping
+- ```'f'``` = geometric feature with color code: red = linearity, green = planarity, blue = verticality
+- ```'p'``` = partition, with a random color for each superpoint
+- ```'r'``` = result cloud, with the predefined class to color mapping
+- ```'e'``` = error cloud, with green/red hue for correct/faulty prediction 
+- ```'s'``` = superedge structure of the superpoint (toggle wireframe on meshlab to view it)
+
+Add option ```--upsample 1``` if you want the prediction file to be on the original, unpruned data.
 
 ## Semantic3D
 
@@ -81,7 +102,7 @@ Download all point clouds and labels from [Semantic3D Dataset](http://www.semant
 
 To compute the partition run
 
-```python partition/partition_Semantic3D.py --SEMA3D_PATH $SEMA3D_DIR```
+```python partition/partition.py --dataset sema3d --ROOT_PATH $SEMA3D_DIR --voxel_width 0.05 --reg_strength 0.8 --ver_batch 5000000```
 
 It is recommended that you have at least 24GB of RAM to run this code. Otherwise, increase the ```voxel_width``` parameter to increase pruning.
 
@@ -99,7 +120,6 @@ CUDA_VISIBLE_DEVICES=0 python learning/main.py --dataset sema3d --SEMA3D_PATH $S
 ```
 The trained network can be downloaded [here](http://imagine.enpc.fr/~simonovm/largescale/model_sema3d_trainval.pth.tar) and loaded with `--resume` argument.
 
-
 To test this network on the full test set, run
 ```
 CUDA_VISIBLE_DEVICES=0 python learning/main.py --dataset sema3d --SEMA3D_PATH $SEMA3D_DIR --db_test_name testfull --db_train_name trainval \
@@ -115,9 +135,20 @@ CUDA_VISIBLE_DEVICES=0 python learning/main.py --dataset sema3d --SEMA3D_PATH $S
 
 To upsample the prediction to the unpruned data and write the .labels files for the reduced test set, run:
 
-```python partition/write_Semantic3D.py --SEMA3D_PATH $SEMA3D_DIR --odir "results/sema3d/best" --db_test_name testred```
+```python partition/write_Semantic3d.py --SEMA3D_PATH $SEMA3D_DIR --odir "results/sema3d/best" --db_test_name testred```
 
 To visualize the results and intermediary steps (on the subsampled graph), use the visualize function in partition. For example:
 ```
-python ./partition/visualize.py --dataset sema3d --ROOT_PATH $SEMA3D_DIR --res_file 'model/semantic3d/predictions_testred_best' --file_path 'test_reduced/MarketplaceFeldkirch_Station4' --output_type ifpr
+python partition/visualize.py --dataset sema3d --ROOT_PATH $SEMA3D_DIR --res_file 'model/semantic3d/predictions_testred_best' --file_path 'test_reduced/MarketplaceFeldkirch_Station4' --output_type ifprs
 ```
+
+avoid ```--upsample 1``` as it can can take a very long time on the largest clouds.
+
+# Other data sets
+
+You can apply SPG on your own data set with minimal changes:
+- adapt references to ```custom_dataset``` in ```/partition/partition.py```
+- you will need to create the function ```read_custom_format``` in ```/partition/provider.py``` which outputs xyz and rgb values, as well as semantic labels if available (already implemented for ply files)
+- adapt the template function ```/learning/custom_dataset.py``` to your achitecture and design choices
+- adapt references to ```custom_dataset``` in ```/learning/main.py```
+- add your data set colormap to ```get_color_from_label``` in ```/partition/provider.py```
